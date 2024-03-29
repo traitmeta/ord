@@ -44,4 +44,18 @@ impl Mutation {
 
     Entity::insert_many(batch).exec(db).await
   }
+
+  pub async fn update_mint_info<C>(db: &C, form_data: &Model) -> Result<Model, DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        let mut token = form_data.clone().into_active_model();
+        token.minted = Set(form_data.minted.to_owned());
+        token.latest_mint_number = Set(form_data.latest_mint_number);
+
+        Entity::update(token)
+            .filter(Column::Id.eq(form_data.id))
+            .exec(db)
+            .await
+    }
 }
