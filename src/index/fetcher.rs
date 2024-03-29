@@ -28,10 +28,10 @@ impl Fetcher {
   pub(crate) fn new(options: &Options) -> Result<Self> {
     let client = Client::new();
 
-    let url = if options.rpc_url(None).starts_with("http://") {
-      options.rpc_url(None)
+    let url = if options.rpc_url(None).0.starts_with("http://") {
+      options.rpc_url(None).0
     } else {
-      "http://".to_string() + &options.rpc_url(None)
+      "http://".to_string() + options.rpc_url(None).0.as_str()
     };
 
     let url = Uri::try_from(&url).map_err(|e| anyhow!("Invalid rpc url {url}: {e}"))?;

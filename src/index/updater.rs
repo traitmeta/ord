@@ -448,6 +448,7 @@ impl<'index> Updater<'_> {
       unbound_inscriptions,
       value_cache,
       value_receiver,
+      database: self.index.ord_database.clone(),
     };
 
     if self.index.index_sats {

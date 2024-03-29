@@ -190,6 +190,7 @@ impl<T> BitcoinCoreRpcResultExt<T> for Result<T, bitcoincore_rpc::Error> {
 pub struct Index {
   client: Client,
   database: Database,
+  ord_database: DatabaseConnection,
   durability: redb::Durability,
   first_inscription_height: u32,
   genesis_block_coinbase_transaction: Transaction,
@@ -355,6 +356,10 @@ impl Index {
       Err(error) => bail!("failed to open index: {error}"),
     };
 
+    let ord_database = Runtime::new()
+      .unwrap()
+      .block_on(DbConn::connect_db(options.database_cfg()?))?;
+
     let genesis_block_coinbase_transaction =
       options.chain().genesis_block().coinbase().unwrap().clone();
 
@@ -362,6 +367,7 @@ impl Index {
       genesis_block_coinbase_txid: genesis_block_coinbase_transaction.txid(),
       client,
       database,
+      ord_database,
       durability,
       first_inscription_height: options.first_inscription_height(),
       genesis_block_coinbase_transaction,

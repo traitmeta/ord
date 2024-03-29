@@ -103,15 +103,22 @@ impl Options {
     self.index_runes && self.chain() != Chain::Mainnet
   }
 
-  pub(crate) fn rpc_url(&self, wallet_name: Option<String>) -> String {
+  pub(crate) fn rpc_url(&self, wallet_name: Option<String>) -> (String, bool) {
+    use std::net::SocketAddr;
+
     let base_url = self
       .rpc_url
       .clone()
       .unwrap_or(format!("127.0.0.1:{}", self.chain().default_rpc_port()));
 
+    let mut use_minreq_http = true;
+    if let Ok(_socket_addr) = SocketAddr::from_str(base_url.as_str()) {
+      use_minreq_http = false;
+    }
+
     match wallet_name {
-      Some(wallet_name) => format!("{base_url}/wallet/{wallet_name}"),
-      None => format!("{base_url}/"),
+      Some(wallet_name) => (format!("{base_url}/wallet/{wallet_name}"), use_minreq_http),
+      None => (format!("{base_url}/"), use_minreq_http),
     }
   }
 
@@ -209,11 +216,11 @@ impl Options {
   }
 
   pub(crate) fn bitcoin_rpc_client(&self, wallet: Option<String>) -> Result<Client> {
-    let rpc_url = self.rpc_url(wallet);
+    let (rpc_url, use_minreq_http) = self.rpc_url(wallet);
 
     let auth = self.auth()?;
 
-    log::info!("Connecting to Bitcoin Core at {}", self.rpc_url(None));
+    log::info!("Connecting to Bitcoin Core at {}", self.rpc_url(None).0);
 
     if let Auth::CookieFile(cookie_file) = &auth {
       log::info!(
@@ -228,9 +235,12 @@ impl Options {
       );
     }
 
-    let client = Client::new(&rpc_url, auth)
+    let mut client = Client::new(&rpc_url, auth.clone())
       .with_context(|| format!("failed to connect to Bitcoin Core RPC at {rpc_url}"))?;
-
+    if use_minreq_http {
+      client = Client::new_minreq_http(&rpc_url, auth)
+        .with_context(|| format!("failed to connect to Bitcoin Core RPC at {rpc_url}"))?;
+    }
     let rpc_chain = match client.get_blockchain_info()?.chain.as_str() {
       "main" => Chain::Mainnet,
       "test" => Chain::Testnet,
@@ -246,6 +256,14 @@ impl Options {
     }
 
     Ok(client)
+  }
+
+  pub(crate) fn database_cfg(&self) -> Result<DB> {
+    let config = self.load_config()?;
+    match config.database {
+      Some(database) => anyhow::Result::Ok(database),
+      None => Err(anyhow!("no database specified")),
+    }
   }
 }
 
@@ -266,7 +284,7 @@ mod tests {
       .unwrap()
       .options
       .rpc_url(None),
-      "127.0.0.1:1234/"
+      ("127.0.0.1:1234/".to_string(), false)
     );
   }
 
@@ -292,7 +310,7 @@ mod tests {
   fn use_default_network() {
     let arguments = Arguments::try_parse_from(["ord", "index", "update"]).unwrap();
 
-    assert_eq!(arguments.options.rpc_url(None), "127.0.0.1:8332/");
+    assert_eq!(arguments.options.rpc_url(None).0, "127.0.0.1:8332/");
 
     assert!(arguments
       .options
@@ -306,7 +324,7 @@ mod tests {
     let arguments =
       Arguments::try_parse_from(["ord", "--chain=signet", "index", "update"]).unwrap();
 
-    assert_eq!(arguments.options.rpc_url(None), "127.0.0.1:38332/");
+    assert_eq!(arguments.options.rpc_url(None).0, "127.0.0.1:38332/");
 
     assert!(arguments
       .options
@@ -603,7 +621,7 @@ mod tests {
     let (options, _) = parse_wallet_args("ord wallet --name foo balance");
 
     assert_eq!(
-      options.rpc_url(Some("foo".into())),
+      options.rpc_url(Some("foo".into())).0,
       "127.0.0.1:8332/wallet/foo"
     );
   }

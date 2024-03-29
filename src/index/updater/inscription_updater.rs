@@ -65,6 +65,7 @@ pub(super) struct InscriptionUpdater<'a, 'db, 'tx> {
   pub(super) unbound_inscriptions: u64,
   pub(super) value_cache: &'a mut HashMap<OutPoint, u64>,
   pub(super) value_receiver: &'a mut Receiver<u64>,
+  pub(super) database: DatabaseConnection,
 }
 
 impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'db, 'tx> {
@@ -230,7 +231,7 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'db, 'tx> {
       self
         .transaction_id_to_transaction
         .insert(&txid.store(), self.transaction_buffer.as_slice())?;
-
+      // TODO insert transaction to DB
       self.transaction_buffer.clear();
     }
 
@@ -509,6 +510,22 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'db, 'tx> {
           }
           .store(),
         )?;
+
+        // TODO insert to db
+        let model = InscriptionEntryModel {
+          charms,
+          fee,
+          height: self.height,
+          id: inscription_id.value(),
+          inscription_number,
+          parent,
+          sat: sat.map(|s| s.0),
+          sequence_number,
+          timestamp: self.timestamp,
+        };
+        Runtime::new()
+          .unwrap()
+          .block_on(InscriptionEntryMut::create_one(&self.database, &model))?;
 
         self
           .id_to_sequence_number
