@@ -63,4 +63,7 @@ pub enum BRC20Error {
 
   #[error("invalid integer {0}")]
   InvalidInteger(String),
+
+  #[error("tx not found: {0}")]
+  TxNotFound(String),
 }

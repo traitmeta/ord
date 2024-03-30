@@ -2,15 +2,9 @@ use self::errors::BRC20Error;
 
 use super::*;
 use crate::{InscriptionId, SatPoint};
+use entities::brc20_tx_receipt::OperationType;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
-pub enum OperationType {
-  Deploy,
-  Mint,
-  InscribeTransfer,
-  Transfer,
-}
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct Receipt {
   pub inscription_id: InscriptionId,
@@ -50,6 +44,7 @@ pub struct MintEvent {
 pub struct InscripbeTransferEvent {
   pub tick: Tick,
   pub amount: u128,
+  pub msg: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]

@@ -3,13 +3,13 @@ use super::{
   *,
 };
 
-use crate::okx::datastore::brc20::{Brc20Reader, Brc20ReaderWriter};
-use crate::okx::datastore::ord::OrdReader;
-use crate::okx::protocol::context::Context;
+use crate::brc20::datastore::{Brc20Reader, Brc20ReaderWriter};
+use crate::brc20::datastore::ord::OrdReader;
+use crate::brc20::protocol::context::Context;
 use crate::{
-  okx::{
-    datastore::brc20::{
-      BRC20Error, Balance, DeployEvent, Event, InscripbeTransferEvent, MintEvent, Receipt, Tick,
+  brc20::{
+    datastore::{
+      errors::BRC20Error, Balance, DeployEvent, Event, InscripbeTransferEvent, MintEvent, Receipt, Tick,
       TokenInfo, TransferEvent, TransferInfo, TransferableLog,
     },
     protocol::brc20::{Message, Mint, Operation},

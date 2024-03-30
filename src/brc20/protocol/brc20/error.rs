@@ -1,4 +1,4 @@
-use crate::okx::datastore::brc20::BRC20Error;
+use crate::brc20::datastore::errors::BRC20Error;
 use redb::TableError;
 
 #[allow(clippy::enum_variant_names)]

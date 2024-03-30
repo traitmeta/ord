@@ -1,6 +1,7 @@
 use crate::{
-  okx::datastore::{
-    brc20::{BRC20Error, OperationType},
+  brc20::datastore::{
+    errors::BRC20Error,
+    OperationType,
     ScriptKey,
   },
   InscriptionId, Result, SatPoint,

@@ -1,10 +1,12 @@
 use std::str::FromStr;
 
+use crate::brc20::datastore::errors::BRC20Error;
 use crate::brc20::datastore::ord::{InscriptionOp, OrdReader, OrdReaderWriter};
-use crate::brc20::datastore::{balance, ScriptKey};
 use crate::brc20::datastore::{
-  Balance, Brc20Reader, Brc20ReaderWriter, Receipt, Tick, TokenInfo, TransferInfo, TransferableLog,
+  Balance, Brc20Reader, Brc20ReaderWriter, InscripbeTransferEvent, MintEvent, Receipt, Tick,
+  TokenInfo, TransferEvent, TransferInfo, TransferableLog,
 };
+use crate::brc20::datastore::{DeployEvent, Event, Event::Deploy, ScriptKey};
 use crate::brc20::lru::SimpleLru;
 use crate::brc20::protocol::BlockContext;
 use crate::index::entry::{InscriptionEntryValue, InscriptionIdValue, OutPointValue, TxidValue};
@@ -13,6 +15,7 @@ use crate::SatPoint;
 use anyhow::anyhow;
 use bitcoin::{Network, OutPoint, Script, TxOut, Txid};
 use dal::dal::brc20_token::{Mutation as Brc20TokenWriter, Query as Brc20TokenReader};
+use dal::dal::brc20_tx_receipt::{Mutation as Brc20TxReceiptWriter, Query as Brc20TxReceiptReader};
 use dal::dal::brc20_user_balance::{
   Mutation as Brc20UserBalanceWriter, Query as Brc20UserBalanceReader,
 };
@@ -272,7 +275,122 @@ impl<'a, 'db, 'txn> Brc20Reader for Context<'a, 'db, 'txn> {
   }
 
   fn get_transaction_receipts(&self, txid: &Txid) -> crate::Result<Vec<Receipt>, Self::Error> {
-    get_transaction_receipts(self.BRC20_EVENTS, txid)
+    let mut tx_receipts: Vec<Receipt> = vec![];
+    let mut err;
+    let rt = tokio::runtime::Builder::new_multi_thread()
+      .enable_all()
+      .build()
+      .unwrap();
+    rt.block_on(async move {
+      let mut page = 0;
+      let count_per_page = 100;
+      loop {
+        let result =
+          Brc20TxReceiptReader::get_transaction_receipts(&self.db, txid.to_string().as_str()).await;
+        match result {
+          Ok(receipts) => {
+            for receipt in receipts.iter() {
+              let mut event: Result<Event, BRC20Error>;
+              match receipt.op {
+                entities::brc20_tx_receipt::OperationType::Deploy => {
+                  let supply = match receipt.supply {
+                    Some(supply) => supply.to_u128().unwrap(),
+                    None => {
+                      err = BRC20Error::InvalidSupply("not found in db".to_string());
+                      return;
+                    }
+                  };
+                  let limit_per_mint = match receipt.limit_per_mint {
+                    Some(limit_per_mint) => limit_per_mint.to_u128().unwrap(),
+                    None => {
+                      err =
+                        BRC20Error::InvalidInteger("limit per mint not found in db".to_string());
+                      return;
+                    }
+                  };
+                  event = Ok(Event::Deploy(DeployEvent {
+                    supply,
+                    limit_per_mint,
+                    decimal: receipt.decimal.map_or(18, |d| d),
+                    tick: Tick::from_str(receipt.tick.as_str()).unwrap(),
+                  }))
+                }
+                entities::brc20_tx_receipt::OperationType::Mint => {
+                  let amount = match receipt.amount {
+                    Some(amount) => amount.to_u128().unwrap(),
+                    None => {
+                      err = BRC20Error::InvalidInteger("not found amount in db".to_string());
+                      return;
+                    }
+                  };
+
+                  event = Ok(Event::Mint(MintEvent {
+                    tick: Tick::from_str(receipt.tick.as_str()).unwrap(),
+                    amount,
+                    msg: receipt.msg,
+                  }))
+                }
+                entities::brc20_tx_receipt::OperationType::InscribeTransfer => {
+                  let amount = match receipt.amount {
+                    Some(amount) => amount.to_u128().unwrap(),
+                    None => {
+                      err = BRC20Error::InvalidInteger("not found amount in db".to_string());
+                      return;
+                    }
+                  };
+
+                  event = Ok(Event::InscribeTransfer(InscripbeTransferEvent {
+                    tick: Tick::from_str(receipt.tick.as_str()).unwrap(),
+                    amount,
+                    msg: receipt.msg,
+                  }))
+                }
+                entities::brc20_tx_receipt::OperationType::Transfer => {
+                  let amount = match receipt.amount {
+                    Some(amount) => amount.to_u128().unwrap(),
+                    None => {
+                      err = BRC20Error::InvalidInteger("not found amount in db".to_string());
+                      return;
+                    }
+                  };
+
+                  event = Ok(Event::Transfer(TransferEvent {
+                    tick: Tick::from_str(receipt.tick.as_str()).unwrap(),
+                    amount,
+                    msg: receipt.msg,
+                  }))
+                }
+              }
+              let temp = Receipt {
+                inscription_id: InscriptionId::from_str(&receipt.inscription_id).unwrap(),
+                inscription_number: receipt.inscription_number,
+                old_satpoint: SatPoint::from_str(receipt.old_satpoint.as_str()).unwrap(),
+                new_satpoint: SatPoint::from_str(receipt.new_satpoint.as_str()).unwrap(),
+                op: receipt.op,
+                from: ScriptKey::from_script(
+                  Script::from_bytes(receipt.from.as_bytes()),
+                  self.network,
+                ),
+                to: ScriptKey::from_script(Script::from_bytes(receipt.to.as_bytes()), self.network),
+                result: event,
+              };
+
+              tx_receipts.push(temp);
+            }
+            page += 1
+          }
+          Err(e) => {
+            err = BRC20Error::TxNotFound(txid.to_string());
+            break;
+          }
+        }
+      }
+    });
+
+    match err {
+      e => Err(anyhow!("failed to get all token info! error: {e}")),
+    }
+    Ok(tx_receipts)
   }
 
   fn get_transferable(

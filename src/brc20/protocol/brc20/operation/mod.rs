@@ -3,7 +3,7 @@ mod mint;
 mod transfer;
 
 use super::{params::*, *};
-use crate::{okx::datastore::ord::Action, Inscription};
+use crate::{brc20::datastore::ord::Action, Inscription};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -92,7 +92,7 @@ fn deserialize_brc20(s: &str) -> Result<RawOperation, JSONError> {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::okx::datastore::ord::Action;
+  use crate::brc20::datastore::ord::Action;
 
   #[test]
   fn test_deploy_deserialize() {
