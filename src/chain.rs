@@ -56,6 +56,15 @@ impl Chain {
         Self::Testnet => 12,
       }
   }
+  
+  pub(crate) fn first_brc20_height(self) -> u32 {
+    match self {
+      Self::Mainnet => 779832,
+      Self::Regtest => 0,
+      Self::Signet => 0,
+      Self::Testnet => 0,
+    }
+  }
 
   pub(crate) fn jubilee_height(self) -> u32 {
     match self {

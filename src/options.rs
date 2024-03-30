@@ -58,6 +58,15 @@ pub struct Options {
     help = "Do not index inscriptions."
   )]
   pub(crate) no_index_inscriptions: bool,
+  #[arg(long, help = "Enable Save Ord Receipts.")]
+  pub(crate) enable_save_ord_receipts: bool,
+  #[arg(long, help = "Enable Index all of BRC20 Protocol")]
+  pub(crate) enable_index_brc20: bool,
+  #[arg(
+    long,
+    help = "Don't look for BRC20 messages below <FIRST_BRC20_HEIGHT>."
+  )]
+  pub(crate) first_brc20_height: Option<u32>,
   #[arg(long, short, help = "Use regtest. Equivalent to `--chain regtest`.")]
   pub(crate) regtest: bool,
   #[arg(long, help = "Connect to Bitcoin Core RPC at <RPC_URL>.")]
@@ -98,6 +107,19 @@ impl Options {
       self.chain().first_rune_height()
     }
   }
+  
+  pub(crate) fn first_brc20_height(&self) -> u32 {
+    if self.chain() == Chain::Regtest {
+      self.first_brc20_height.unwrap_or(0)
+    } else if integration_test() {
+      0
+    } else {
+      self
+        .first_brc20_height
+        .unwrap_or_else(|| self.chain().first_brc20_height())
+    }
+  }
+
 
   pub(crate) fn index_runes(&self) -> bool {
     self.index_runes && self.chain() != Chain::Mainnet

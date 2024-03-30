@@ -36,7 +36,7 @@ pub(crate) mod entry;
 mod fetcher;
 mod reorg;
 mod rtx;
-mod updater;
+pub(crate) mod updater;
 
 #[cfg(test)]
 pub(crate) mod testing;
