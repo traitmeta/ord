@@ -20,7 +20,7 @@ pub enum OperationType {
 pub struct Model {
   #[sea_orm(primary_key)]
   pub id: i64,
-
+  pub tx_id: String,
   pub inscription_id: String,
   pub inscription_number: i32,
   pub old_satpoint: String,
