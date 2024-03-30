@@ -1,4 +1,6 @@
-use super::{params::MAX_DECIMAL_WIDTH, BRC20Error};
+use crate::brc20::datastore::errors::BRC20Error;
+
+use super::params::MAX_DECIMAL_WIDTH;
 use bigdecimal::{
   num_bigint::{BigInt, Sign, ToBigInt},
   BigDecimal, One, ToPrimitive,

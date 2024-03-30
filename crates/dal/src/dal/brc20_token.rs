@@ -1,5 +1,6 @@
+use bigdecimal::FromPrimitive;
 use ::entities::brc20_token::{ActiveModel, Column, Entity, Model};
-use sea_orm::*;
+use sea_orm::{prelude::Decimal, *};
 
 pub struct Query;
 
@@ -32,7 +33,7 @@ impl Query {
 pub struct Mutation;
 
 impl Mutation {
-  pub async fn create<C>(db: &C, form_datas: &[Model]) -> Result<InsertResult<ActiveModel>, DbErr>
+  pub async fn creates<C>(db: &C, form_datas: &[Model]) -> Result<InsertResult<ActiveModel>, DbErr>
   where
     C: ConnectionTrait,
   {
@@ -45,17 +46,37 @@ impl Mutation {
     Entity::insert_many(batch).exec(db).await
   }
 
-  pub async fn update_mint_info<C>(db: &C, form_data: &Model) -> Result<Model, DbErr>
-    where
-        C: ConnectionTrait,
-    {
-        let mut token = form_data.clone().into_active_model();
-        token.minted = Set(form_data.minted.to_owned());
-        token.latest_mint_number = Set(form_data.latest_mint_number);
+  pub async fn create<C>(db: &C, form_data: &Model) -> Result<InsertResult<ActiveModel>, DbErr>
+  where
+    C: ConnectionTrait,
+  {
+    let data = form_data.clone().into_active_model();
+    Entity::insert(data).exec(db).await
+  }
 
-        Entity::update(token)
-            .filter(Column::Id.eq(form_data.id))
-            .exec(db)
-            .await
+  pub async fn update_mint_info<C>(
+    db: &C,
+    tick: &str,
+    minted_amt: u128,
+    minted_block_number: u32,
+  ) -> Result<Model, DbErr>
+  where
+    C: ConnectionTrait,
+  {
+    let token: ActiveModel = Entity::find()
+      .filter(Column::Tick.eq(tick))
+      .one(db)
+      .await?
+      .ok_or(DbErr::Custom("Cannot find balance.".to_owned()))
+      .map(Into::into)?;
+
+    ActiveModel {
+      id: token.id,
+      minted: Set(Decimal::from_u128(minted_amt).unwrap()),
+      latest_mint_number: Set(minted_block_number),
+      ..Default::default()
     }
+    .update(db)
+    .await
+  }
 }

@@ -60,4 +60,38 @@ impl Mutation {
       .exec(db)
       .await
   }
+
+  pub async fn update_balance_by_tick<C>(
+    db: &C,
+    user: &str,
+    tick: &str,
+    form_data: &Model,
+  ) -> Result<Model, DbErr>
+  where
+    C: ConnectionTrait,
+  {
+    let balance: ActiveModel = Entity::find()
+      .filter(
+        Condition::all()
+          .add(
+            Condition::any()
+              .add(Column::SctiptHash.eq(user))
+              .add(Column::Address.eq(user)),
+          )
+          .add(Column::Tick.eq(tick)),
+      )
+      .one(db)
+      .await?
+      .ok_or(DbErr::Custom("Cannot find balance.".to_owned()))
+      .map(Into::into)?;
+
+    ActiveModel {
+      id: balance.id,
+      overall_balance: Set(form_data.overall_balance.to_owned()),
+      transferable_balance: Set(form_data.transferable_balance.to_owned()),
+      ..Default::default()
+    }
+    .update(db)
+    .await
+  }
 }

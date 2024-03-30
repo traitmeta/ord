@@ -1,6 +1,7 @@
 use std::str::FromStr;
 
 use crate::brc20::datastore::errors::BRC20Error;
+use crate::brc20::datastore::ord::redb::table::get_txout_by_outpoint;
 use crate::brc20::datastore::ord::{InscriptionOp, OrdReader, OrdReaderWriter};
 use crate::brc20::datastore::{
   Balance, Brc20Reader, Brc20ReaderWriter, InscripbeTransferEvent, MintEvent, Receipt, Tick,
@@ -15,12 +16,22 @@ use crate::SatPoint;
 use anyhow::anyhow;
 use bitcoin::{Network, OutPoint, Script, TxOut, Txid};
 use dal::dal::brc20_token::{Mutation as Brc20TokenWriter, Query as Brc20TokenReader};
+use dal::dal::brc20_trasnferable_log::{
+  Mutation as Brc20TxableLogWriter, Query as Brc20TxableLogReader,
+};
 use dal::dal::brc20_tx_receipt::{Mutation as Brc20TxReceiptWriter, Query as Brc20TxReceiptReader};
 use dal::dal::brc20_user_balance::{
   Mutation as Brc20UserBalanceWriter, Query as Brc20UserBalanceReader,
 };
+use entities::brc20_token::Model as Brc20TokenModel;
+use entities::brc20_transferable_log::Model as Brc20TxableLog;
+use entities::brc20_tx_receipt::Model as Brc20TxReceipt;
+use entities::brc20_user_balance::Model as Brc20UserBalance;
+
 use num_traits::cast::ToPrimitive;
+use num_traits::FromPrimitive;
 use redb::Table;
+use sea_orm::prelude::Decimal;
 use sea_orm::{DatabaseConnection, DbErr};
 
 #[allow(non_snake_case)]
@@ -30,20 +41,12 @@ pub struct Context<'a, 'db, 'txn> {
   pub(crate) hit: u64,
   pub(crate) miss: u64,
   pub(crate) db: DatabaseConnection,
-  pub(crate) network: Network,
 
   // ord tables
   pub(crate) ORD_TX_TO_OPERATIONS: &'a mut Table<'db, 'txn, &'static TxidValue, &'static [u8]>,
   pub(crate) SEQUENCE_NUMBER_TO_INSCRIPTION_ENTRY:
     &'a mut Table<'db, 'txn, u32, InscriptionEntryValue>,
   pub(crate) OUTPOINT_TO_ENTRY: &'a mut Table<'db, 'txn, &'static OutPointValue, &'static [u8]>,
-
-  // BRC20 tables
-  pub(crate) BRC20_BALANCES: &'a mut Table<'db, 'txn, &'static str, &'static [u8]>,
-  pub(crate) BRC20_TOKEN: &'a mut Table<'db, 'txn, &'static str, &'static [u8]>,
-  pub(crate) BRC20_EVENTS: &'a mut Table<'db, 'txn, &'static TxidValue, &'static [u8]>,
-  pub(crate) BRC20_TRANSFERABLELOG: &'a mut Table<'db, 'txn, &'static str, &'static [u8]>,
-  pub(crate) BRC20_INSCRIBE_TRANSFER: &'a mut Table<'db, 'txn, InscriptionIdValue, &'static [u8]>,
 }
 
 impl<'a, 'db, 'txn> OrdReader for Context<'a, 'db, 'txn> {
@@ -53,15 +56,17 @@ impl<'a, 'db, 'txn> OrdReader for Context<'a, 'db, 'txn> {
     &self,
     sequence_number: u32,
   ) -> crate::Result<i32, Self::Error> {
-    get_inscription_number_by_sequence_number(
-      self.SEQUENCE_NUMBER_TO_INSCRIPTION_ENTRY,
-      sequence_number,
-    )
-    .map_err(|e| anyhow!("failed to get inscription number from state! error: {e}"))?
-    .ok_or(anyhow!(
-      "failed to get inscription number! error: sequence number {} not found",
-      sequence_number
-    ))
+    Ok(0)
+
+    // get_inscription_number_by_sequence_number(
+    //   self.SEQUENCE_NUMBER_TO_INSCRIPTION_ENTRY,
+    //   sequence_number,
+    // )
+    // .map_err(|e| anyhow!("failed to get inscription number from state! error: {e}"))?
+    // .ok_or(anyhow!(
+    //   "failed to get inscription number! error: sequence number {} not found",
+    //   sequence_number
+    // ))
   }
 
   fn get_script_key_on_satpoint(
@@ -88,7 +93,9 @@ impl<'a, 'db, 'txn> OrdReader for Context<'a, 'db, 'txn> {
     &self,
     txid: &Txid,
   ) -> crate::Result<Vec<InscriptionOp>, Self::Error> {
-    get_transaction_operations(self.ORD_TX_TO_OPERATIONS, txid)
+    Ok(vec![])
+
+    // get_transaction_operations(self.ORD_TX_TO_OPERATIONS, txid)
   }
 }
 
@@ -98,7 +105,8 @@ impl<'a, 'db, 'txn> OrdReaderWriter for Context<'a, 'db, 'txn> {
     txid: &Txid,
     operations: &[InscriptionOp],
   ) -> crate::Result<(), Self::Error> {
-    save_transaction_operations(self.ORD_TX_TO_OPERATIONS, txid, operations)
+    Ok(())
+    // save_transaction_operations(self.ORD_TX_TO_OPERATIONS, txid, operations)
   }
 }
 
@@ -207,7 +215,7 @@ impl<'a, 'db, 'txn> Brc20Reader for Context<'a, 'db, 'txn> {
             decimal: token.decimal,
             deploy_by: ScriptKey::from_script(
               Script::from_bytes(token.deploy_by.as_bytes()),
-              self.network,
+              self.chain.network,
             ),
             deployed_number: token.deployed_number,
             deployed_timestamp: token.deployed_timestamp,
@@ -250,7 +258,7 @@ impl<'a, 'db, 'txn> Brc20Reader for Context<'a, 'db, 'txn> {
                 decimal: token.decimal,
                 deploy_by: ScriptKey::from_script(
                   Script::from_bytes(token.deploy_by.as_bytes()),
-                  self.network,
+                  self.chain.network,
                 ),
                 deployed_number: token.deployed_number,
                 deployed_timestamp: token.deployed_timestamp,
@@ -276,7 +284,7 @@ impl<'a, 'db, 'txn> Brc20Reader for Context<'a, 'db, 'txn> {
 
   fn get_transaction_receipts(&self, txid: &Txid) -> crate::Result<Vec<Receipt>, Self::Error> {
     let mut tx_receipts: Vec<Receipt> = vec![];
-    let mut err;
+    let mut err: Option<BRC20Error>;
     let rt = tokio::runtime::Builder::new_multi_thread()
       .enable_all()
       .build()
@@ -296,15 +304,16 @@ impl<'a, 'db, 'txn> Brc20Reader for Context<'a, 'db, 'txn> {
                   let supply = match receipt.supply {
                     Some(supply) => supply.to_u128().unwrap(),
                     None => {
-                      err = BRC20Error::InvalidSupply("not found in db".to_string());
+                      err = Some(BRC20Error::InvalidSupply("not found in db".to_string()));
                       return;
                     }
                   };
                   let limit_per_mint = match receipt.limit_per_mint {
                     Some(limit_per_mint) => limit_per_mint.to_u128().unwrap(),
                     None => {
-                      err =
-                        BRC20Error::InvalidInteger("limit per mint not found in db".to_string());
+                      err = Some(BRC20Error::InvalidInteger(
+                        "limit per mint not found in db".to_string(),
+                      ));
                       return;
                     }
                   };
@@ -319,7 +328,9 @@ impl<'a, 'db, 'txn> Brc20Reader for Context<'a, 'db, 'txn> {
                   let amount = match receipt.amount {
                     Some(amount) => amount.to_u128().unwrap(),
                     None => {
-                      err = BRC20Error::InvalidInteger("not found amount in db".to_string());
+                      err = Some(BRC20Error::InvalidInteger(
+                        "not found amount in db".to_string(),
+                      ));
                       return;
                     }
                   };
@@ -334,7 +345,9 @@ impl<'a, 'db, 'txn> Brc20Reader for Context<'a, 'db, 'txn> {
                   let amount = match receipt.amount {
                     Some(amount) => amount.to_u128().unwrap(),
                     None => {
-                      err = BRC20Error::InvalidInteger("not found amount in db".to_string());
+                      err = Some(BRC20Error::InvalidInteger(
+                        "not found amount in db".to_string(),
+                      ));
                       return;
                     }
                   };
@@ -349,7 +362,9 @@ impl<'a, 'db, 'txn> Brc20Reader for Context<'a, 'db, 'txn> {
                   let amount = match receipt.amount {
                     Some(amount) => amount.to_u128().unwrap(),
                     None => {
-                      err = BRC20Error::InvalidInteger("not found amount in db".to_string());
+                      err = Some(BRC20Error::InvalidInteger(
+                        "not found amount in db".to_string(),
+                      ));
                       return;
                     }
                   };
@@ -369,9 +384,12 @@ impl<'a, 'db, 'txn> Brc20Reader for Context<'a, 'db, 'txn> {
                 op: receipt.op,
                 from: ScriptKey::from_script(
                   Script::from_bytes(receipt.from.as_bytes()),
-                  self.network,
+                  self.chain.network,
                 ),
-                to: ScriptKey::from_script(Script::from_bytes(receipt.to.as_bytes()), self.network),
+                to: ScriptKey::from_script(
+                  Script::from_bytes(receipt.to.as_bytes()),
+                  self.chain.network,
+                ),
                 result: event,
               };
 
@@ -380,7 +398,59 @@ impl<'a, 'db, 'txn> Brc20Reader for Context<'a, 'db, 'txn> {
             page += 1
           }
           Err(e) => {
-            err = BRC20Error::TxNotFound(txid.to_string());
+            err = Some(BRC20Error::TxNotFound(txid.to_string()));
+            return;
+          }
+        }
+      }
+    });
+
+    match err {
+      None => Ok(tx_receipts),
+      Some(e) => Err(anyhow!("failed to get all token info! error: {e}")),
+    }
+  }
+
+  fn get_transferable(
+    &self,
+    script: &ScriptKey,
+  ) -> crate::Result<Vec<TransferableLog>, Self::Error> {
+    let mut transferable_logs: Vec<TransferableLog> = vec![];
+    let mut err;
+    let rt = tokio::runtime::Builder::new_multi_thread()
+      .enable_all()
+      .build()
+      .unwrap();
+    rt.block_on(async move {
+      let mut page = 0;
+      let count_per_page = 100;
+      loop {
+        let result = Brc20TxableLogReader::find_in_page(
+          &self.db,
+          script.to_string().as_str(),
+          page,
+          count_per_page,
+        )
+        .await;
+        match result {
+          Ok((logs, page_nums)) => {
+            for log in logs.iter() {
+              let temp = TransferableLog {
+                tick: Tick::from_str(log.tick.as_str()).unwrap(),
+                inscription_id: InscriptionId::from_str(&log.inscription_id).unwrap(),
+                inscription_number: log.inscription_number,
+                amount: log.amount.to_u128().unwrap(),
+                owner: ScriptKey::from_script(
+                  Script::from_bytes(log.owner.as_bytes()),
+                  self.chain.network,
+                ),
+              };
+              transferable_logs.push(temp);
+            }
+            page += 1
+          }
+          Err(e) => {
+            err = e;
             break;
           }
         }
@@ -388,16 +458,9 @@ impl<'a, 'db, 'txn> Brc20Reader for Context<'a, 'db, 'txn> {
     });
 
     match err {
+      DbErr::RecordNotFound(_) => Ok(transferable_logs),
       e => Err(anyhow!("failed to get all token info! error: {e}")),
     }
-    Ok(tx_receipts)
-  }
-
-  fn get_transferable(
-    &self,
-    script: &ScriptKey,
-  ) -> crate::Result<Vec<TransferableLog>, Self::Error> {
-    get_transferable(self.BRC20_TRANSFERABLELOG, script)
   }
 
   fn get_transferable_by_tick(
@@ -405,7 +468,45 @@ impl<'a, 'db, 'txn> Brc20Reader for Context<'a, 'db, 'txn> {
     script: &ScriptKey,
     tick: &Tick,
   ) -> crate::Result<Vec<TransferableLog>, Self::Error> {
-    get_transferable_by_tick(self.BRC20_TRANSFERABLELOG, script, tick)
+    let mut transferable_logs: Vec<TransferableLog> = vec![];
+    let mut err;
+    let rt = tokio::runtime::Builder::new_multi_thread()
+      .enable_all()
+      .build()
+      .unwrap();
+    rt.block_on(async move {
+      let result = Brc20TxableLogReader::get_transferable_by_tick(
+        &self.db,
+        script.to_string().as_str(),
+        tick.as_str(),
+      )
+      .await;
+      match result {
+        Ok(logs) => {
+          for log in logs.iter() {
+            let temp = TransferableLog {
+              tick: Tick::from_str(log.tick.as_str()).unwrap(),
+              inscription_id: InscriptionId::from_str(&log.inscription_id).unwrap(),
+              inscription_number: log.inscription_number,
+              amount: log.amount.to_u128().unwrap(),
+              owner: ScriptKey::from_script(
+                Script::from_bytes(log.owner.as_bytes()),
+                self.chain.network,
+              ),
+            };
+            transferable_logs.push(temp);
+          }
+        }
+        Err(e) => {
+          err = e;
+        }
+      }
+    });
+
+    match err {
+      DbErr::RecordNotFound(_) => Ok(transferable_logs),
+      e => Err(anyhow!("failed to get all token info! error: {e}")),
+    }
   }
 
   fn get_transferable_by_id(
@@ -413,14 +514,84 @@ impl<'a, 'db, 'txn> Brc20Reader for Context<'a, 'db, 'txn> {
     script: &ScriptKey,
     inscription_id: &InscriptionId,
   ) -> crate::Result<Option<TransferableLog>, Self::Error> {
-    get_transferable_by_id(self.BRC20_TRANSFERABLELOG, script, inscription_id)
+    let mut transferable_log: Option<TransferableLog>;
+    let mut err: Option<DbErr>;
+    let rt = tokio::runtime::Builder::new_multi_thread()
+      .enable_all()
+      .build()
+      .unwrap();
+    rt.block_on(async move {
+      let result = Brc20TxableLogReader::get_transferable_by_id(
+        &self.db,
+        script.to_string().as_str(),
+        inscription_id.to_string().as_str(),
+      )
+      .await;
+      match result {
+        Ok(Some(log)) => {
+          transferable_log = Some(TransferableLog {
+            tick: Tick::from_str(log.tick.as_str()).unwrap(),
+            inscription_id: InscriptionId::from_str(&log.inscription_id).unwrap(),
+            inscription_number: log.inscription_number,
+            amount: log.amount.to_u128().unwrap(),
+            owner: ScriptKey::from_script(
+              Script::from_bytes(log.owner.as_bytes()),
+              self.chain.network,
+            ),
+          });
+        }
+        Ok(None) => transferable_log = None,
+        Err(e) => err = Some(e),
+      }
+    });
+
+    match err {
+      Some(e) => Err(anyhow!("get transferable log by id fail! {e}")),
+      None => Ok(transferable_log),
+    }
   }
 
   fn get_inscribe_transfer_inscription(
     &self,
     inscription_id: &InscriptionId,
   ) -> crate::Result<Option<TransferInfo>, Self::Error> {
-    get_inscribe_transfer_inscription(self.BRC20_INSCRIBE_TRANSFER, inscription_id)
+    let mut transferable_logs: Option<TransferInfo>;
+    let mut err;
+    let rt = tokio::runtime::Builder::new_multi_thread()
+      .enable_all()
+      .build()
+      .unwrap();
+    rt.block_on(async move {
+      let result = Brc20TxReceiptReader::get_inscribe_transfer_inscription(
+        &self.db,
+        inscription_id.to_string().as_str(),
+      )
+      .await;
+      match result {
+        Ok(Some(receipt)) => {
+          let amount = match receipt.amount {
+            Some(amount) => amount.to_u128().unwrap(),
+            None => {
+              err = Some(DbErr::AttrNotSet("amount".to_string()));
+              return;
+            }
+          };
+          transferable_logs = Some(TransferInfo {
+            tick: Tick::from_str(receipt.tick.as_str()).unwrap(),
+            amt: amount,
+          });
+        }
+        Ok(None) => transferable_logs = None,
+        Err(e) => {
+          err = Some(e);
+        }
+      }
+    });
+
+    match err {
+      None => Ok(transferable_logs),
+      Some(e) => Err(anyhow!("failed to get all token info! error: {e}")),
+    }
   }
 }
 
@@ -430,7 +601,44 @@ impl<'a, 'db, 'txn> Brc20ReaderWriter for Context<'a, 'db, 'txn> {
     script_key: &ScriptKey,
     new_balance: Balance,
   ) -> crate::Result<(), Self::Error> {
-    update_token_balance(self.BRC20_BALANCES, script_key, new_balance)
+    let mut user_balance = Brc20UserBalance {
+      tick: new_balance.tick.to_string(),
+      overall_balance: Decimal::from_u128(new_balance.overall_balance).unwrap(),
+      transferable_balance: Decimal::from_u128(new_balance.transferable_balance).unwrap(),
+      id: 0,
+      address: None,
+      sctipt_hash: None,
+    };
+
+    let mut addr: String;
+    match script_key {
+      ScriptKey::Address(a) => addr = a.clone().assume_checked().to_string(),
+      ScriptKey::ScriptHash(script) => addr = script_key.to_string(),
+    }
+
+    let mut err: Option<DbErr>;
+    let rt = tokio::runtime::Builder::new_multi_thread()
+      .enable_all()
+      .build()
+      .unwrap();
+    rt.block_on(async move {
+      let result = Brc20UserBalanceWriter::update_balance_by_tick(
+        &self.db,
+        addr.as_str(),
+        new_balance.tick.to_string().as_str(),
+        &user_balance,
+      )
+      .await;
+      match result {
+        Ok(_) => err = None,
+        Err(e) => err = Some(e),
+      }
+    });
+
+    match err {
+      None => Ok(()),
+      Some(e) => Err(anyhow!("failed to get all token info! error: {e}")),
+    }
   }
 
   fn insert_token_info(
@@ -438,7 +646,38 @@ impl<'a, 'db, 'txn> Brc20ReaderWriter for Context<'a, 'db, 'txn> {
     tick: &Tick,
     new_info: &TokenInfo,
   ) -> crate::Result<(), Self::Error> {
-    insert_token_info(self.BRC20_TOKEN, tick, new_info)
+    let mut token = Brc20TokenModel {
+      id: 0,
+      tick: new_info.tick.to_string(),
+      inscription_id: new_info.inscription_id.to_string(),
+      inscription_number: new_info.inscription_number,
+      supply: Decimal::from_u128(new_info.supply).unwrap(),
+      minted: Decimal::from_u128(new_info.supply).unwrap(),
+      limit_per_mint: Decimal::from_u128(new_info.limit_per_mint).unwrap(),
+      decimal: new_info.decimal,
+      deploy_by: new_info.deploy_by.to_string(),
+      deployed_number: new_info.deployed_number,
+      deployed_timestamp: new_info.deployed_timestamp,
+      latest_mint_number: new_info.latest_mint_number,
+    };
+
+    let mut err: Option<DbErr>;
+    let rt = tokio::runtime::Builder::new_multi_thread()
+      .enable_all()
+      .build()
+      .unwrap();
+    rt.block_on(async move {
+      let result = Brc20TokenWriter::create(&self.db, &token).await;
+      match result {
+        Ok(_) => err = None,
+        Err(e) => err = Some(e),
+      }
+    });
+
+    match err {
+      None => Ok(()),
+      Some(e) => Err(anyhow!("failed to get all token info! error: {e}")),
+    }
   }
 
   fn update_mint_token_info(
@@ -447,7 +686,29 @@ impl<'a, 'db, 'txn> Brc20ReaderWriter for Context<'a, 'db, 'txn> {
     minted_amt: u128,
     minted_block_number: u32,
   ) -> crate::Result<(), Self::Error> {
-    update_mint_token_info(self.BRC20_TOKEN, tick, minted_amt, minted_block_number)
+    let mut err: Option<DbErr>;
+    let rt = tokio::runtime::Builder::new_multi_thread()
+      .enable_all()
+      .build()
+      .unwrap();
+    rt.block_on(async move {
+      let result = Brc20TokenWriter::update_mint_info(
+        &self.db,
+        tick.as_str(),
+        minted_amt,
+        minted_block_number,
+      )
+      .await;
+      match result {
+        Ok(_) => err = None,
+        Err(e) => err = Some(e),
+      }
+    });
+
+    match err {
+      None => Ok(()),
+      Some(e) => Err(anyhow!("failed to get all token info! error: {e}")),
+    }
   }
 
   fn save_transaction_receipts(
@@ -455,7 +716,69 @@ impl<'a, 'db, 'txn> Brc20ReaderWriter for Context<'a, 'db, 'txn> {
     txid: &Txid,
     receipt: &[Receipt],
   ) -> crate::Result<(), Self::Error> {
-    save_transaction_receipts(self.BRC20_EVENTS, txid, receipt)
+    let recipets = vec![];
+    for re in receipt.iter() {
+      let mut recipet = Brc20TxReceipt {
+        id: 0,
+        tick: "".to_string(),
+        inscription_id: re.inscription_id.to_string(),
+        inscription_number: re.inscription_number,
+        tx_id: txid.to_string(),
+        old_satpoint: re.old_satpoint.to_string(),
+        new_satpoint: re.new_satpoint.to_string(),
+        op: re.op,
+        from: re.from.to_string(),
+        to: re.to.to_string(),
+        amount: None,
+        supply: None,
+        limit_per_mint: None,
+        decimal: None,
+        msg: None,
+      };
+      match re.result {
+        Ok(Deploy(deploy)) => {
+          recipet.tick = deploy.tick.to_string();
+          recipet.supply = Some(Decimal::from_u128(deploy.supply).unwrap());
+          recipet.limit_per_mint = Some(Decimal::from_u128(deploy.limit_per_mint).unwrap());
+          recipet.decimal = Some(deploy.decimal);
+        }
+        Ok(Event::Mint(mint)) => {
+          recipet.tick = mint.tick.to_string();
+          recipet.amount = Some(Decimal::from_u128(mint.amount).unwrap());
+          recipet.msg = mint.msg;
+        }
+        Ok(Event::InscribeTransfer(mint)) => {
+          recipet.tick = mint.tick.to_string();
+          recipet.amount = Some(Decimal::from_u128(mint.amount).unwrap());
+          recipet.msg = mint.msg;
+        }
+        Ok(Event::Transfer(mint)) => {
+          recipet.tick = mint.tick.to_string();
+          recipet.amount = Some(Decimal::from_u128(mint.amount).unwrap());
+          recipet.msg = mint.msg;
+        }
+        Err(e) => return Err(anyhow!("event has err! {e}")),
+      }
+      recipets.push(recipet);
+    }
+
+    let mut err: Option<DbErr>;
+    let rt = tokio::runtime::Builder::new_multi_thread()
+      .enable_all()
+      .build()
+      .unwrap();
+    rt.block_on(async move {
+      let result = Brc20TxReceiptWriter::create(&self.db, &recipets).await;
+      match result {
+        Ok(_) => err = None,
+        Err(e) => err = Some(e),
+      }
+    });
+
+    match err {
+      None => Ok(()),
+      Some(e) => Err(anyhow!("failed to get all token info! error: {e}")),
+    }
   }
 
   fn insert_transferable(
@@ -464,7 +787,32 @@ impl<'a, 'db, 'txn> Brc20ReaderWriter for Context<'a, 'db, 'txn> {
     tick: &Tick,
     inscription: &TransferableLog,
   ) -> crate::Result<(), Self::Error> {
-    insert_transferable(self.BRC20_TRANSFERABLELOG, script, tick, inscription)
+    let mut tx_log = Brc20TxableLog {
+      id: 0,
+      tick: inscription.tick.to_string(),
+      inscription_id: inscription.inscription_id.to_string(),
+      inscription_number: inscription.inscription_number,
+      amount: Decimal::from_u128(inscription.amount).unwrap(),
+      owner: inscription.owner.to_string(),
+    };
+
+    let mut err: Option<DbErr>;
+    let rt = tokio::runtime::Builder::new_multi_thread()
+      .enable_all()
+      .build()
+      .unwrap();
+    rt.block_on(async move {
+      let result = Brc20TxableLogWriter::create(&self.db, &tx_log).await;
+      match result {
+        Ok(_) => err = None,
+        Err(e) => err = Some(e),
+      }
+    });
+
+    match err {
+      None => Ok(()),
+      Some(e) => Err(anyhow!("failed to get all token info! error: {e}")),
+    }
   }
 
   fn remove_transferable(
@@ -473,7 +821,8 @@ impl<'a, 'db, 'txn> Brc20ReaderWriter for Context<'a, 'db, 'txn> {
     tick: &Tick,
     inscription_id: &InscriptionId,
   ) -> crate::Result<(), Self::Error> {
-    remove_transferable(self.BRC20_TRANSFERABLELOG, script, tick, inscription_id)
+    // remove_transferable(self.BRC20_TRANSFERABLELOG, script, tick, inscription_id)
+    Ok(())
   }
 
   fn insert_inscribe_transfer_inscription(
@@ -481,17 +830,20 @@ impl<'a, 'db, 'txn> Brc20ReaderWriter for Context<'a, 'db, 'txn> {
     inscription_id: &InscriptionId,
     transfer_info: TransferInfo,
   ) -> crate::Result<(), Self::Error> {
-    insert_inscribe_transfer_inscription(
-      self.BRC20_INSCRIBE_TRANSFER,
-      inscription_id,
-      transfer_info,
-    )
+    Ok(())
+
+    // insert_inscribe_transfer_inscription(
+    //   self.BRC20_INSCRIBE_TRANSFER,
+    //   inscription_id,
+    //   transfer_info,
+    // )
   }
 
   fn remove_inscribe_transfer_inscription(
     &mut self,
     inscription_id: &InscriptionId,
   ) -> crate::Result<(), Self::Error> {
-    remove_inscribe_transfer_inscription(self.BRC20_INSCRIBE_TRANSFER, inscription_id)
+    Ok(())
+    // remove_inscribe_transfer_inscription(self.BRC20_INSCRIBE_TRANSFER, inscription_id)
   }
 }

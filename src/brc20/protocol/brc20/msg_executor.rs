@@ -3,14 +3,14 @@ use super::{
   *,
 };
 
-use crate::brc20::datastore::{Brc20Reader, Brc20ReaderWriter};
 use crate::brc20::datastore::ord::OrdReader;
+use crate::brc20::datastore::{Brc20Reader, Brc20ReaderWriter, ScriptKey};
 use crate::brc20::protocol::context::Context;
 use crate::{
   brc20::{
     datastore::{
-      errors::BRC20Error, Balance, DeployEvent, Event, InscripbeTransferEvent, MintEvent, Receipt, Tick,
-      TokenInfo, TransferEvent, TransferInfo, TransferableLog,
+      errors::BRC20Error, Balance, DeployEvent, Event, InscripbeTransferEvent, MintEvent, Receipt,
+      Tick, TokenInfo, TransferEvent, TransferInfo, TransferableLog,
     },
     protocol::brc20::{Message, Mint, Operation},
   },
@@ -319,6 +319,7 @@ fn process_inscribe_transfer(
   Ok(Event::InscribeTransfer(InscripbeTransferEvent {
     tick: inscription.tick,
     amount: amt,
+    msg: None,
   }))
 }
 

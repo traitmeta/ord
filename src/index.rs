@@ -10,6 +10,7 @@ use {
   },
   super::*,
   crate::{
+    brc20::datastore::ord::{redb::table::get_transaction_operations, InscriptionOp},
     subcommand::{find::FindRangeOutput, server::InscriptionQuery},
     templates::StatusHtml,
   },
@@ -77,6 +78,7 @@ define_table! { STATISTIC_TO_COUNT, u64, u64 }
 define_table! { TRANSACTION_ID_TO_RUNE, &TxidValue, u128 }
 define_table! { TRANSACTION_ID_TO_TRANSACTION, &TxidValue, &[u8] }
 define_table! { WRITE_TRANSACTION_STARTING_BLOCK_COUNT_TO_TIMESTAMP, u32, u128 }
+define_table! { ORD_TX_TO_OPERATIONS, &TxidValue, &[u8] }
 
 #[derive(Debug, PartialEq)]
 pub enum List {
@@ -330,6 +332,7 @@ impl Index {
         tx.open_table(SEQUENCE_NUMBER_TO_SATPOINT)?;
         tx.open_table(TRANSACTION_ID_TO_RUNE)?;
         tx.open_table(WRITE_TRANSACTION_STARTING_BLOCK_COUNT_TO_TIMESTAMP)?;
+        tx.open_table(ORD_TX_TO_OPERATIONS)?;
 
         {
           let mut outpoint_to_sat_ranges = tx.open_table(OUTPOINT_TO_SAT_RANGES)?;
@@ -579,6 +582,7 @@ impl Index {
       total_bytes,
       WRITE_TRANSACTION_STARTING_BLOCK_COUNT_TO_TIMESTAMP,
     );
+    insert_table_info(&mut tables, &wtx, total_bytes, ORD_TX_TO_OPERATIONS);
 
     for table in wtx.list_tables()? {
       assert!(tables.contains_key(table.name()));
@@ -1946,6 +1950,48 @@ impl Index {
       rune,
       charms,
     }))
+  }
+
+  pub fn ord_txid_inscriptions(&self, txid: &Txid) -> Result<Option<Vec<InscriptionOp>>> {
+    let rtx = self.database.begin_read()?;
+    let table = rtx.open_table(ORD_TX_TO_OPERATIONS)?;
+    let res = get_transaction_operations(&table, txid)?;
+
+    if res.is_empty() {
+      let tx = self.client.get_raw_transaction_info(txid, None)?;
+      if let Some(tx_blockhash) = tx.blockhash {
+        let tx_bh = self.client.get_block_header_info(&tx_blockhash)?;
+        let parsed_height = self.block_height()?;
+        if parsed_height.is_none() || u32::try_from(tx_bh.height)? > parsed_height.unwrap().0 {
+          return Ok(None);
+        }
+      } else {
+        return Err(anyhow!("can't get tx block hash: {txid}"));
+      }
+    }
+
+    Ok(Some(res))
+  }
+
+  pub fn ord_get_txs_inscriptions(
+    &self,
+    txs: &Vec<Txid>,
+  ) -> Result<Vec<(bitcoin::Txid, Vec<InscriptionOp>)>> {
+    let rtx = self.database.begin_read()?;
+    let table = rtx.open_table(ORD_TX_TO_OPERATIONS)?;
+    let mut result = Vec::new();
+    for txid in txs {
+      let inscriptions = get_transaction_operations(&table, txid)?;
+      if inscriptions.is_empty() {
+        continue;
+      }
+      result.push((*txid, inscriptions));
+    }
+    Ok(result)
+  }
+
+  pub(crate) fn get_chain_network(&self) -> Network {
+    self.options.chain().network()
   }
 
   pub(crate) fn get_inscription_entry(

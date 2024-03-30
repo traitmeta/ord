@@ -4,6 +4,7 @@ mod transfer;
 
 use super::{params::*, *};
 use crate::{brc20::datastore::ord::Action, Inscription};
+use entities::brc20_tx_receipt::OperationType;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -42,7 +43,7 @@ enum RawOperation {
 pub(crate) fn deserialize_brc20_operation(
   inscription: &Inscription,
   action: &Action,
-) -> Result<Operation> {
+) -> Result<Operation, anyhow::Error> {
   let content_body = std::str::from_utf8(inscription.body().ok_or(JSONError::InvalidJson)?)?;
   if content_body.len() < 40 {
     return Err(JSONError::NotBRC20Json.into());

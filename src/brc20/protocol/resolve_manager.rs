@@ -1,5 +1,5 @@
-use crate::inscriptions::ParsedEnvelope;
 use crate::brc20::protocol::context::Context;
+use crate::inscriptions::ParsedEnvelope;
 use {
   super::*,
   crate::{
@@ -53,11 +53,7 @@ impl MsgResolveManager {
           .map(|height| context.chain.blockheight >= height)
           .unwrap_or(false)
         {
-          if let Some(msg) = brc20::Message::resolve(
-            context.BRC20_INSCRIBE_TRANSFER,
-            &new_inscriptions,
-            operation,
-          )? {
+          if let Some(msg) = brc20::Message::resolve(context, &new_inscriptions, operation)? {
             log::debug!(
               "BRC20 resolved the message from {:?}, msg {:?}",
               operation,

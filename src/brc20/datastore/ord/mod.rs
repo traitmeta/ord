@@ -10,6 +10,7 @@ use {
 };
 
 pub mod operation;
+pub mod redb;
 
 pub trait OrdReader {
   type Error: Debug + Display;

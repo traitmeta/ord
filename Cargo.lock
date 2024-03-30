@@ -3644,6 +3644,7 @@ dependencies = [
  "miniscript",
  "mp4",
  "num-traits",
+ "once_cell",
  "pretty_assertions",
  "pulldown-cmark",
  "redb",

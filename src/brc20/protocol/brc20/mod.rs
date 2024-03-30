@@ -1,11 +1,4 @@
-use crate::{
-  brc20::datastore::{
-    errors::BRC20Error,
-    OperationType,
-    ScriptKey,
-  },
-  InscriptionId, Result, SatPoint,
-};
+use crate::{InscriptionId, SatPoint};
 use bitcoin::Txid;
 
 mod error;

@@ -1,6 +1,7 @@
 use {
-  self::{inscription_updater::InscriptionUpdater, rune_updater::RuneUpdater},
+  self::{brc20::lru::SimpleLru, inscription_updater::InscriptionUpdater, rune_updater::RuneUpdater},
   super::{fetcher::Fetcher, *},
+  crate::brc20::protocol::{context::Context, BlockContext, ProtocolConfig, ProtocolManager},
   futures::future::try_join_all,
   std::sync::mpsc,
   tokio::sync::mpsc::{error::TryRecvError, Receiver, Sender},
@@ -318,6 +319,7 @@ impl<'index> Updater<'_> {
     wtx: &mut WriteTransaction,
     block: BlockData,
     value_cache: &mut HashMap<OutPoint, u64>,
+    tx_out_cache: &mut SimpleLru<OutPoint, TxOut>,
   ) -> Result<()> {
     Reorg::detect_reorg(&block, self.height, self.index)?;
 
@@ -339,6 +341,7 @@ impl<'index> Updater<'_> {
     };
 
     let mut outpoint_to_value = wtx.open_table(OUTPOINT_TO_VALUE)?;
+    let mut outpoint_to_entry = wtx.open_table(OUTPOINT_TO_ENTRY)?;
 
     let index_inscriptions =
       self.height >= index.first_inscription_height && !index.options.no_index_inscriptions;
@@ -575,6 +578,25 @@ impl<'index> Updater<'_> {
       &Statistic::UnboundInscriptions.key(),
       &inscription_updater.unbound_inscriptions,
     )?;
+
+    let mut context = Context {
+      chain: BlockContext {
+        network: index.get_chain_network(),
+        blockheight: self.height,
+        blocktime: block.header.time,
+      },
+      tx_out_cache,
+      hit: 0,
+      miss: 0,
+      ORD_TX_TO_OPERATIONS: &mut wtx.open_table(ORD_TX_TO_OPERATIONS)?,
+      SEQUENCE_NUMBER_TO_INSCRIPTION_ENTRY: &mut sequence_number_to_inscription_entry,
+      OUTPOINT_TO_ENTRY: &mut outpoint_to_entry,
+        db: todo!(),
+    };
+
+    // Create a protocol manager to index the block of bitmap data.
+    let config = ProtocolConfig::new_with_options(&index.options);
+    ProtocolManager::new(config).index_block(&mut context, &block, operations)?;
 
     if index.index_runes && self.height >= self.index.options.first_rune_height() {
       let mut outpoint_to_rune_balances = wtx.open_table(OUTPOINT_TO_RUNE_BALANCES)?;

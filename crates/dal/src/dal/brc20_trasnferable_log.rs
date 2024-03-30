@@ -6,11 +6,11 @@ pub struct Query;
 impl Query {
   pub async fn get_transferable_by_id(
     db: &DbConn,
-    cript_hash: &str,
+    script_hash: &str,
     inscription_id: &str,
   ) -> Result<Option<Model>, DbErr> {
     Entity::find()
-      .filter(Column::Owner.eq(cript_hash))
+      .filter(Column::Owner.eq(script_hash))
       .filter(Column::InscriptionId.eq(inscription_id))
       .one(db)
       .await
