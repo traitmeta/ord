@@ -1,5 +1,5 @@
-use bigdecimal::FromPrimitive;
 use ::entities::brc20_token::{ActiveModel, Column, Entity, Model};
+use bigdecimal::FromPrimitive;
 use sea_orm::{prelude::Decimal, *};
 
 pub struct Query;

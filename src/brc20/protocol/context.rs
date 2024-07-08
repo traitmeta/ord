@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use crate::brc20::datastore::errors::BRC20Error;
-use crate::brc20::datastore::ord::redb::table::get_txout_by_outpoint;
+use crate::brc20::datastore::ord::table::get_txout_by_outpoint;
 use crate::brc20::datastore::ord::{InscriptionOp, OrdReader, OrdReaderWriter};
 use crate::brc20::datastore::{
   Balance, Brc20Reader, Brc20ReaderWriter, InscripbeTransferEvent, MintEvent, Receipt, Tick,

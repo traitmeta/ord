@@ -1,5 +1,7 @@
 use {
-  self::{brc20::lru::SimpleLru, inscription_updater::InscriptionUpdater, rune_updater::RuneUpdater},
+  self::{
+    brc20::lru::SimpleLru, inscription_updater::InscriptionUpdater, rune_updater::RuneUpdater,
+  },
   super::{fetcher::Fetcher, *},
   crate::brc20::protocol::{context::Context, BlockContext, ProtocolConfig, ProtocolManager},
   futures::future::try_join_all,
@@ -425,7 +427,10 @@ impl<'index> Updater<'_> {
 
     let home_inscription_count = home_inscriptions.len()?;
 
+    let mut operations = HashMap::new();
     let mut inscription_updater = InscriptionUpdater {
+      operations: &mut operations,
+      tx_out_cache,
       blessed_inscription_count,
       chain: self.index.options.chain(),
       cursed_inscription_count,
@@ -591,7 +596,7 @@ impl<'index> Updater<'_> {
       ORD_TX_TO_OPERATIONS: &mut wtx.open_table(ORD_TX_TO_OPERATIONS)?,
       SEQUENCE_NUMBER_TO_INSCRIPTION_ENTRY: &mut sequence_number_to_inscription_entry,
       OUTPOINT_TO_ENTRY: &mut outpoint_to_entry,
-        db: todo!(),
+      db: todo!(),
     };
 
     // Create a protocol manager to index the block of bitmap data.

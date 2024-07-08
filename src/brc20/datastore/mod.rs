@@ -1,12 +1,12 @@
 pub(super) mod balance;
 pub(super) mod errors;
 pub(super) mod events;
+pub(crate) mod ord;
 pub(super) mod script_key;
 pub(super) mod tick;
 pub(super) mod token_info;
 pub(super) mod transfer;
 pub(super) mod transferable_log;
-pub mod ord;
 
 pub use self::{
   balance::Balance, events::Receipt, events::*, script_key::ScriptKey, tick::*,

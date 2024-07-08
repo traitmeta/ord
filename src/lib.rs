@@ -51,13 +51,13 @@ use {
   chrono::{DateTime, TimeZone, Utc},
   ciborium::Value,
   clap::{ArgGroup, Parser},
+  dal::dal::ord_inscription_entries::Mutation as InscriptionEntryMut,
   dal::orm::{conn as DbConn, db::DB},
   derive_more::{Display, FromStr},
+  entities::ord_inscription_entries::Model as InscriptionEntryModel,
   html_escaper::{Escape, Trusted},
   lazy_static::lazy_static,
   regex::Regex,
-  dal::dal::ord_inscription_entries::Mutation as InscriptionEntryMut,
-  entities::ord_inscription_entries::Model as InscriptionEntryModel,
   sea_orm::DatabaseConnection,
   serde::{Deserialize, Deserializer, Serialize, Serializer},
   std::{
@@ -119,6 +119,7 @@ macro_rules! tprintln {
 
 mod arguments;
 mod blocktime;
+mod brc20;
 pub mod chain;
 mod config;
 mod decimal;
@@ -142,7 +143,6 @@ mod server_config;
 pub mod subcommand;
 mod tally;
 pub mod templates;
-pub mod brc20;
 
 type Result<T = (), E = Error> = std::result::Result<T, E>;
 

@@ -38,6 +38,8 @@ enum Origin {
 }
 
 pub(super) struct InscriptionUpdater<'a, 'db, 'tx> {
+  pub(super) operations: &'a mut HashMap<Txid, Vec<InscriptionOp>>,
+  pub(super) tx_out_cache: &'a mut SimpleLru<OutPoint, TxOut>,
   pub(super) blessed_inscription_count: u64,
   pub(super) chain: Chain,
   pub(super) cursed_inscription_count: u64,

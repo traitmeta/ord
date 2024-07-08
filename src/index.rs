@@ -10,7 +10,7 @@ use {
   },
   super::*,
   crate::{
-    brc20::datastore::ord::{redb::table::get_transaction_operations, InscriptionOp},
+    brc20::datastore::ord::{table::get_transaction_operations, InscriptionOp},
     subcommand::{find::FindRangeOutput, server::InscriptionQuery},
     templates::StatusHtml,
   },
@@ -34,9 +34,9 @@ use {
 pub use self::entry::RuneEntry;
 
 pub(crate) mod entry;
-mod fetcher;
-mod reorg;
-mod rtx;
+pub(crate) mod fetcher;
+pub(crate) mod reorg;
+pub(crate) mod rtx;
 pub(crate) mod updater;
 
 #[cfg(test)]
@@ -68,6 +68,7 @@ define_table! { INSCRIPTION_NUMBER_TO_SEQUENCE_NUMBER, i32, u32 }
 define_table! { OUTPOINT_TO_RUNE_BALANCES, &OutPointValue, &[u8] }
 define_table! { OUTPOINT_TO_SAT_RANGES, &OutPointValue, &[u8] }
 define_table! { OUTPOINT_TO_VALUE, &OutPointValue, u64}
+define_table! { OUTPOINT_TO_ENTRY, &OutPointValue, &[u8]}
 define_table! { RUNE_ID_TO_RUNE_ENTRY, RuneIdValue, RuneEntryValue }
 define_table! { RUNE_TO_RUNE_ID, u128, RuneIdValue }
 define_table! { SAT_TO_SATPOINT, u64, &SatPointValue }
@@ -324,6 +325,7 @@ impl Index {
         tx.open_table(INSCRIPTION_NUMBER_TO_SEQUENCE_NUMBER)?;
         tx.open_table(OUTPOINT_TO_RUNE_BALANCES)?;
         tx.open_table(OUTPOINT_TO_VALUE)?;
+        tx.open_table(OUTPOINT_TO_ENTRY)?;
         tx.open_table(RUNE_ID_TO_RUNE_ENTRY)?;
         tx.open_table(RUNE_TO_RUNE_ID)?;
         tx.open_table(SAT_TO_SATPOINT)?;
