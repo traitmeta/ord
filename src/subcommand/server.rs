@@ -3,6 +3,7 @@ use {
     accept_encoding::AcceptEncoding,
     accept_json::AcceptJson,
     error::{OptionExt, ServerError, ServerResult},
+    response::{MyResponse, RuneResp},
   },
   super::*,
   crate::templates::{
@@ -21,6 +22,7 @@ use {
     Router,
   },
   axum_server::Handle,
+  bitcoin::hashes,
   brotli::Decompressor,
   rust_embed::RustEmbed,
   rustls_acme::{
@@ -44,6 +46,7 @@ pub(crate) use server_config::ServerConfig;
 mod accept_encoding;
 mod accept_json;
 mod error;
+mod response;
 pub mod query;
 mod server_config;
 
@@ -274,6 +277,10 @@ impl Server {
         .route("/runes", get(Self::runes))
         .route("/runes/:page", get(Self::runes_paginated))
         .route("/runes/balances", get(Self::runes_balances))
+        .route("/rune/decipher", post(Self::rune_decipher))
+        .route("/rune/decipher/:txid",get(Self::rune_decipher_with_tx_hash))
+        .route("/rune/encipher", post(Self::rune_encipher))
+        .route("/rune/commitment/:rune", get(Self::rune_commitment))
         .route("/sat/:sat", get(Self::sat))
         .route("/search", get(Self::search_by_query))
         .route("/search/*query", get(Self::search_by_path))
@@ -795,6 +802,156 @@ impl Server {
       } else {
         StatusCode::NOT_FOUND.into_response()
       })
+    })
+  }
+
+  async fn rune_decipher(Json(raw_tx): Json<String>) -> ServerResult {
+    task::block_in_place(|| {
+      let hex_raw_tx = match <Vec<u8> as hashes::hex::FromHex>::from_hex(raw_tx.as_str()) {
+        Ok(r) => r,
+        Err(e) => {
+          return Ok(
+            Json(MyResponse {
+              code: 1001,
+              message: e.to_string(),
+              data: "",
+            })
+            .into_response(),
+          )
+        }
+      };
+
+      let tx: Transaction = match Decodable::consensus_decode(&mut hex_raw_tx.as_slice()) {
+        Ok(tx) => tx,
+        Err(e) => {
+          return Ok(
+            Json(MyResponse {
+              code: 1002,
+              message: e.to_string(),
+              data: "",
+            })
+            .into_response(),
+          )
+        }
+      };
+
+      let artifact = match Runestone::decipher(&tx) {
+        Some(artifact) => artifact,
+        None => {
+          return Ok(
+            Json(MyResponse {
+              code: 1003,
+              message: "decipher failed".to_string(),
+              data: "",
+            })
+            .into_response(),
+          )
+        }
+      };
+
+      Ok(
+        Json(MyResponse {
+          code: 200,
+          message: "success".to_string(),
+          data: artifact,
+        })
+        .into_response(),
+      )
+    })
+  }
+
+  async fn rune_decipher_with_tx_hash(
+    Extension(index): Extension<Arc<Index>>,
+    Path(txid): Path<Txid>,
+  ) -> ServerResult {
+    task::block_in_place(|| {
+      let tx = match index.get_transaction(txid) {
+        Ok(tx) => tx,
+        Err(e) => {
+          return Ok(
+            Json(MyResponse {
+              code: 1001,
+              message: e.to_string(),
+              data: "",
+            })
+            .into_response(),
+          )
+        }
+      };
+      
+      if tx.is_none() {
+        return Ok(
+          Json(MyResponse {
+            code: 1001,
+            message: "transaction not found".to_string(),
+            data: "",
+          })
+          .into_response(),
+        );
+      }
+
+      let artifact = match Runestone::decipher(&tx.unwrap()) {
+        Some(artifact) => artifact,
+        None => {
+          return Ok(
+            Json(MyResponse {
+              code: 1003,
+              message: "decipher failed".to_string(),
+              data: "",
+            })
+            .into_response(),
+          )
+        }
+      };
+
+      Ok(
+        Json(MyResponse {
+          code: 200,
+          message: "success".to_string(),
+          data: artifact,
+        })
+        .into_response(),
+      )
+    })
+  }
+
+  async fn rune_encipher(Json(runstone): Json<Runestone>) -> ServerResult {
+    task::block_in_place(|| {
+      Ok(
+        Json(MyResponse {
+          code: 200,
+          message: "success".to_string(),
+          data: runstone.encipher(),
+        })
+        .into_response(),
+      )
+    })
+  }
+
+  async fn rune_commitment(
+    Extension(server_config): Extension<Arc<ServerConfig>>,
+    Path(DeserializeFromStr(spaced_rune)): Path<DeserializeFromStr<SpacedRune>>,
+  ) -> ServerResult {
+    task::block_in_place(|| {
+      let minimum = Rune::minimum_at_height(
+        server_config.chain.network(),
+        Height((Runestone::COMMIT_CONFIRMATIONS + 2).into()),
+      )
+      .0;
+      let commitment = spaced_rune.rune.commitment();
+      Ok(
+        Json(MyResponse {
+          code: 200,
+          message: "success".to_string(),
+          data: RuneResp {
+            rune: spaced_rune.rune.0.to_string(),
+            spacers: spaced_rune.spacers,
+            commitment: hex::encode(commitment),
+            can_etch: spaced_rune.rune.0 > minimum,
+          },
+        })
+        .into_response(),
+      )
     })
   }
 
